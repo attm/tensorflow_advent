@@ -42,6 +42,7 @@ class Parallel_array_reader_thread(object):
             cgx = cgx - cgx.min(axis=(1, 2, 3), keepdims=True)
             cgx = cgx / cgx.max(axis=(1, 2, 3), keepdims=True)
             self.seis = np.concatenate([cgx, rgx])
+            #self.seis = (rgx, cgx])
             self.seg = np.copy(self.flt_train[source_i:source_i + self.batch_size].astype(np.float32))
 
             self.lockr.release()
@@ -74,8 +75,11 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     with Parallel_array_reader_thread(DATASET_PATH, 1) as train_gen:
-        for i in range(2):
+        for i in range(5):
             x, y = next(train_gen)
+            print(f"Image shapes are:")
+            print(f"    x = {x.shape}")
+            print(f"    y = {y.shape}")
             fig, ax = plt.subplots(nrows=1, ncols=3)
             ax[0].imshow(x[0, :, :, 0].T.astype(float), cmap='binary')
             ax[1].imshow(x[1, :, :, 0].T.astype(float), cmap='binary')
