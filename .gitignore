@@ -139,4 +139,8 @@ cython_debug/
 
 # Datasets files
 data/*
+saved_models/*
+
+# Files formats
 *.hdf5
+*.jpg

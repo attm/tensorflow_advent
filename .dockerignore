@@ -1,1 +1,3 @@
-data
+data/*
+saved_models/*
+*.hdf5

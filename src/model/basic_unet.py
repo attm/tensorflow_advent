@@ -121,6 +121,6 @@ def build_model() -> Model:
 
     output_c = layers.Conv2D(filters=1, kernel_size=3, padding="same")(d_b1_c2_a)
     output_bn = layers.BatchNormalization()(output_c)
-    output = layers.Activation("sigmoid")(output_bn)
+    output = layers.Activation("softmax")(output_bn)
 
     return Model(inputs, output)
