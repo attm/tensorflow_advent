@@ -20,7 +20,7 @@ DATASET_PATH = os.path.join(cwd, "data", "dataset.hdf5")
 
 # Model serialization params
 SAVED_MODELS_FOLDER_PATH = os.path.join(cwd, "saved_models")
-MODEL_NAME = "unet_2"
+MODEL_NAME = "unet_4"
 
 TRAIN_GENERATED_SAMPLES_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "train_generated")
 SAVED_MODEL_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "model")
@@ -30,9 +30,9 @@ loss_fn = BinaryCrossentropy()
 meanIoU_train = MeanIoU(2)
 
 # Training hyperparameters
-NUM_EPOCHS = 8
+NUM_EPOCHS = 6
 NUM_STEPS = 60000
-BATCH_SIZE = 16
+BATCH_SIZE = 24
 
 @tf.function
 def train_step(model : Model, optim : Optimizer, X : np.ndarray, y : np.ndarray) -> tuple:
@@ -66,9 +66,13 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
             # Train model
             loss, logits = train_step(model, optim, x_source, y_resized)
 
-            # Update loss and metrics
+            # Update loss
             loss_sum += loss
-            meanIoU_train.update_state(y_resized, logits)
+
+            # Calculate tensor for loss function
+            iou_logits = tf.cast(logits + 0.5, dtype=tf.int32)
+            iou_y_true = tf.cast(y_resized + 0.5, dtype=tf.int32)
+            meanIoU_train.update_state(iou_y_true, iou_logits)
 
             if step % (NUM_STEPS / 20) == 0:
                 # Calculate and print metrics/losses
@@ -84,12 +88,21 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
                 loss_sum = 0
                 log_step_counter += 1
 
+                # Save model
+                model.save(SAVED_MODEL_FOLDER_PATH)
 
 if __name__ == "__main__":
     if not os.path.exists(TRAIN_GENERATED_SAMPLES_FOLDER_PATH):
         os.makedirs(TRAIN_GENERATED_SAMPLES_FOLDER_PATH)
 
-    unet_model = build_model()
+    if os.path.exists(SAVED_MODEL_FOLDER_PATH):
+        unet_model = keras.models.load_model(SAVED_MODEL_FOLDER_PATH)
+        print(f"\nLoaded model from {SAVED_MODEL_FOLDER_PATH}")
+    else:
+        unet_model = build_model()
+        print(f"\nBuilt new model!")
+
     optim = Adam()
+    unet_model.compile(optimizer=optim)
 
     fit_unet(unet_model, optim)
