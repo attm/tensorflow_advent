@@ -3,108 +3,112 @@ import time
 from tensorflow import keras
 from tensorflow.keras.optimizers import Optimizer, Adam
 from tensorflow.keras.models import Model
-from tensorflow.keras.losses import BinaryCrossentropy
-from tensorflow.keras.metrics import MeanIoU
-from tensorflow.keras.preprocessing.image import save_img
+from tensorflow.keras.losses import SparseCategoricalCrossentropy, Loss
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
 from src.utils.generator import Parallel_array_reader_thread
-from src.model.modified_unet import build_model
+from src.model.symmetric_unet import build_model as build_segnet
+from src.infer.infer_unet import predict_to_subplot
 
 
 # Dataset
 cwd = os.getcwd()
 DATASET_PATH = os.path.join(cwd, "data", "dataset.hdf5")
 
-# Model serialization params
+# Segmentation model saving parameters
 SAVED_MODELS_FOLDER_PATH = os.path.join(cwd, "saved_models")
-MODEL_NAME = "unet_6"
+MODEL_NAME = "unet_1"
 
 TRAIN_GENERATED_SAMPLES_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "train_generated")
-SAVED_MODEL_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "model")
+SAVED_SEGNET_MODEL_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "segnet_model")
+
+# Image params
+IMG_HEIGHT = 192
+IMG_WIDTH = 192
+IMG_CHANNELS = 1
+NUM_CLASSES = 2
 
 # Model training options
-loss_fn = BinaryCrossentropy()
-meanIoU_train = MeanIoU(2)
+loss_fn = SparseCategoricalCrossentropy()
 
 # Training hyperparameters
-NUM_EPOCHS = 6
+NUM_EPOCHS = 1
 NUM_STEPS = 20000
-BATCH_SIZE = 16
+BATCH_SIZE = 24
 
 @tf.function
-def train_step(model : Model, optim : Optimizer, X : np.ndarray, y : np.ndarray) -> tuple:
+def train_step(model : Model, optim : Optimizer, loss_func : Loss, X : np.ndarray, y : np.ndarray) -> tuple:
+    """Train step for model.
+
+    Args:
+        model (Model): keras model to be trained.
+        optim (Optimizer) keras optimizer for model.
+        loss_func (Loss): loss function for that model.
+        X (np.ndarray): input for model.
+        y (np.ndarray): ground-truth segmentation map.
+    Return:
+        loss (tf.Tensor): loss value for that step.
+        logits (tf.Tensor): model output for that step (is it logits or probabilities depends on model, not on this function)
+    """
     with tf.GradientTape() as gtape:
         logits = model(X, training=True)
-        loss = loss_fn(y_true=y, y_pred=logits)
-    grads = gtape.gradient(loss, model.trainable_weights)
-    optim.apply_gradients(zip(grads, model.trainable_weights))
-    return loss, logits
+        loss = loss_func(y_true=y, y_pred=logits)
+        grads = gtape.gradient(loss, model.trainable_weights)
+        optim.apply_gradients(zip(grads, model.trainable_weights))
+        return loss, logits
 
 def fit_unet(model : Model, optim : Optimizer) -> None:
-    # Calculate y size to match model output
-    model_output_shape = model.layers[-1].output_shape
-    new_y_size = (model_output_shape[1], model_output_shape[2])
+    with Parallel_array_reader_thread(DATASET_PATH, BATCH_SIZE) as train_gen:
+        for epoch in range(NUM_EPOCHS):
+            print(f"===== Epoch {epoch+1}/{NUM_EPOCHS} started! =====")
 
-    for epoch in range(NUM_EPOCHS):
-        print(f"Epoch {epoch+1}/{NUM_EPOCHS} started!")
+            loss_sum = 0
+            log_step_counter = 1
+            step_time = time.time()
 
-        loss_sum = 0
-        log_step_counter = 1
-        step_time = time.time()
-
-        for step in range(NUM_STEPS):
-            with Parallel_array_reader_thread(DATASET_PATH, BATCH_SIZE) as train_gen:
+            for step in range(NUM_STEPS):
                 x, y = next(train_gen)
+                x_source, x_target = x
 
-            # Prepare training data
-            y_resized = tf.image.resize(y, new_y_size)
-            y_resized = tf.clip_by_value(y_resized, 0.0, 1.0)
+                # Prepare y image
+                # Given y samples from dataset are already normalized to [0.0 - 1.0] range, but there are some outliners
+                y = tf.clip_by_value(y, 0.0, 1.0)
+                y = tf.cast(y + 0.5, dtype=tf.int32)
 
-            x_source, _ = x
+                # Train segnet model
+                loss, logits_source = train_step(model, optim, loss_fn, x_source, y)
 
-            # Train model
-            loss, logits = train_step(model, optim, x_source, y_resized)
+                # Update loss
+                loss_sum += loss
 
-            # Update loss
-            loss_sum += loss
+                if step % (NUM_STEPS / 20) == 0:
+                    # Print losses
+                    print(f"    {5*log_step_counter}% ({int(time.time() - step_time)}s): loss = {loss_sum / (NUM_STEPS / 20):.4f}")
 
-            # Calculate tensor for loss function
-            iou_logits = tf.cast(logits + 0.5, dtype=tf.int32)
-            iou_y_true = tf.cast(y_resized + 0.5, dtype=tf.int32)
-            meanIoU_train.update_state(iou_y_true, iou_logits)
+                    # Save model prediction as subplot
+                    fig = predict_to_subplot(model, np.array(x_target), np.array(x_source), np.array(y))
+                    fig.savefig(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_subplot.jpg"))
 
-            if step % (NUM_STEPS / 20) == 0:
-                # Calculate and print metrics/losses
-                meanIoU_train_value = meanIoU_train.result()
-                print(f"    {5*log_step_counter}% ({int(time.time() - step_time)}s): loss = {loss_sum / (NUM_STEPS / 20):.4f}, meanIoU = {float(meanIoU_train_value):.4f}")
-                meanIoU_train.reset_states()
+                    # Update iterators
+                    loss_sum = 0
+                    log_step_counter += 1
+                    step_time = time.time()
 
-                # Save examples of model predictions and true samples
-                save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"true_{log_step_counter}.jpg"), y_resized[0])
-                save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"sample_{log_step_counter}.jpg"), logits[0])
-
-                # Update iterators
-                loss_sum = 0
-                log_step_counter += 1
-                step_time = time.time()
-
-                # Save model
-                model.save(SAVED_MODEL_FOLDER_PATH)
+                    # Save model
+                    model.save(SAVED_SEGNET_MODEL_FOLDER_PATH)
 
 if __name__ == "__main__":
     if not os.path.exists(TRAIN_GENERATED_SAMPLES_FOLDER_PATH):
         os.makedirs(TRAIN_GENERATED_SAMPLES_FOLDER_PATH)
 
-    if os.path.exists(SAVED_MODEL_FOLDER_PATH):
-        unet_model = keras.models.load_model(SAVED_MODEL_FOLDER_PATH)
-        print(f"\nLoaded model from {SAVED_MODEL_FOLDER_PATH}")
+    if os.path.exists(SAVED_SEGNET_MODEL_FOLDER_PATH):
+        unet_model = keras.models.load_model(SAVED_SEGNET_MODEL_FOLDER_PATH)
+        print(f"\nLoaded model from {SAVED_SEGNET_MODEL_FOLDER_PATH}")
     else:
-        unet_model = build_model()
+        unet_model = build_segnet(num_classes=NUM_CLASSES, input_shape=(IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), include_softmax=True)
         print(f"\nBuilt new model!")
 
-    optim = Adam()
-    unet_model.compile(optimizer=optim, loss="binary_crossentropy")
+    optim = Adam(learning_rate=0.001)
+    unet_model.compile(optimizer=optim)
 
     fit_unet(unet_model, optim)

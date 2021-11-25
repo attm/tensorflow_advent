@@ -57,7 +57,7 @@ class Parallel_array_reader_thread(object):
 
     def terminate(self):
         self.thread_exit = True
-        #self.lockw.release()
+        self.lockw.release()
         self.p.join(1)
 
     def __next__(self):

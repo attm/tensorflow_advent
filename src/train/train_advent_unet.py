@@ -22,7 +22,7 @@ DATASET_PATH = os.path.join(cwd, "data", "dataset.hdf5")
 
 # Segmentation model saving parameters
 SAVED_MODELS_FOLDER_PATH = os.path.join(cwd, "saved_models")
-MODEL_NAME = "s_unet_1"
+MODEL_NAME = "adv_unet_8"
 
 TRAIN_GENERATED_SAMPLES_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "train_generated")
 SAVED_SEGNET_MODEL_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "segnet_model")
@@ -37,14 +37,15 @@ NUM_CLASSES = 2
 loss_fn = SparseCategoricalCrossentropy()
 
 # Training hyperparameters
-NUM_EPOCHS = 6
-NUM_STEPS = 20000
-BATCH_SIZE = 24
+NUM_EPOCHS = 2
+NUM_STEPS = 20
+BATCH_SIZE = 1
 
 # Discriminator parameters
 d_loss_fn = BinaryCrossentropy(from_logits=True)
 D_SOURCE_LABEL = 0
 D_TARGET_LABEL = 1
+D_LOSS_LAMBDA = 0.001
 
 @tf.function
 def train_step(model : Model, optim : Optimizer, loss_func : Loss, X : np.ndarray, y : np.ndarray) -> tuple:
@@ -108,10 +109,10 @@ def train_step_adv(model : Model, d_model : Model, d_optim : Optimizer, d_loss_f
         logits_target = model(X, training=True)
         self_info_tensor = pred_to_self_information(logits_target)
         discriminator_output = d_model(self_info_tensor, training=False)
-        disc_y_target = tf.fill(discriminator_output.shape, 1)
-        discriminator_loss = d_loss_fn(y_pred=discriminator_output, y_true=disc_y_target)
-        grads = gtape.gradient(discriminator_loss, discriminator_model.trainable_weights)
-        d_optim.apply_gradients(zip(grads, discriminator_model.trainable_weights))
+        disc_y_target = tf.fill(discriminator_output.shape, D_TARGET_LABEL)
+        discriminator_loss = d_loss_fn(y_pred=discriminator_output, y_true=disc_y_target) * D_LOSS_LAMBDA
+        grads = gtape.gradient(discriminator_loss, model.trainable_weights)
+        d_optim.apply_gradients(zip(grads, model.trainable_weights))
         return discriminator_loss, discriminator_output, logits_target
 
 def fit_unet(model : Model, optim : Optimizer, discriminator_model : Model, discriminator_optim : Model) -> None:
@@ -142,7 +143,7 @@ def fit_unet(model : Model, optim : Optimizer, discriminator_model : Model, disc
 
                 # Train segnet model to fool the discriminator using discriminator loss
                 # Target images are used
-                d_loss, d_ouput, logits_target = train_step_adv(model, discriminator_model, discriminator_optim, d_loss_fn, x_target)
+                d_loss, d_ouput, logits_target = train_step_adv(model, discriminator_model, optim, d_loss_fn, x_target)
 
                 # Train discriminator using segnet model output for source and target inputs
                 # Prepare labels for discriminator
@@ -165,13 +166,7 @@ def fit_unet(model : Model, optim : Optimizer, discriminator_model : Model, disc
                     # Print losses
                     print(f"    {5*log_step_counter}% ({int(time.time() - step_time)}s): loss = {loss_sum / (NUM_STEPS / 20):.4f}, d_loss = {d_loss_sum / (NUM_STEPS / 20):.4f}")
 
-                    # # Save examples of model predictions and true samples
-                    # save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_x_source_c0.jpg"), x_source[0])
-                    # save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_true_c0.jpg"), y[0, :, :, 0, None])
-                    # save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_logits_c0.jpg"), logits_source[0, :, :, 0, None])
-                    # #save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_true_c1.jpg"), y_resized[0, :, :, 1, None])
-                    # save_img(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_logits_c1.jpg"), logits_source[0, :, :, 1, None])
-
+                    # Save model prediction as subplot
                     fig = predict_to_subplot(model, np.array(x_target), np.array(x_source), np.array(y))
                     fig.savefig(os.path.join(TRAIN_GENERATED_SAMPLES_FOLDER_PATH, f"{log_step_counter}_subplot.jpg"))
 
@@ -188,14 +183,12 @@ if __name__ == "__main__":
     if not os.path.exists(TRAIN_GENERATED_SAMPLES_FOLDER_PATH):
         os.makedirs(TRAIN_GENERATED_SAMPLES_FOLDER_PATH)
 
-    # if os.path.exists(SAVED_SEGNET_MODEL_FOLDER_PATH):
-    #     unet_model = keras.models.load_model(SAVED_SEGNET_MODEL_FOLDER_PATH)
-    #     print(f"\nLoaded model from {SAVED_SEGNET_MODEL_FOLDER_PATH}")
-    # else:
-    #     unet_model = build_segnet(num_classes=2, input_shape=(IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), include_softmax=True)
-    #     print(f"\nBuilt new model!")
-
-    unet_model = build_segnet(num_classes=2, input_shape=(IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), include_softmax=True)
+    if os.path.exists(SAVED_SEGNET_MODEL_FOLDER_PATH):
+        unet_model = keras.models.load_model(SAVED_SEGNET_MODEL_FOLDER_PATH)
+        print(f"\nLoaded model from {SAVED_SEGNET_MODEL_FOLDER_PATH}")
+    else:
+        unet_model = build_segnet(num_classes=NUM_CLASSES, input_shape=(IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), include_softmax=True)
+        print(f"\nBuilt new model!")
 
     optim = Adam(learning_rate=0.001)
     unet_model.compile(optimizer=optim)

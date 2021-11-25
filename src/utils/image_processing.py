@@ -26,7 +26,6 @@ def make_model_output_subplot(x_target : np.ndarray, x_source : np.ndarray, y : 
         target_prediction (np.ndarray): prediction for x_target made by segmentation model.
         source_prediction (np.ndarray): prediction for x_source made by segmentation model.
         entropy_map (np.ndarray): entropy map made from self-information vector made by segmentation model.
-
     Returns:
         agg_img (np.ndarray): aggregated image with labels and legend.
     """

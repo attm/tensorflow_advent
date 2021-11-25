@@ -11,10 +11,10 @@ from src.utils.custom_loss_funcs import pred_to_self_information
 
 
 cwd = os.getcwd()
-INFER_COUNT = 5
+INFER_COUNT = 10
 DATASET_PATH = os.path.join(cwd, "data", "dataset.hdf5")
 SAVED_MODELS_FOLDER_PATH = os.path.join(cwd, "saved_models")
-MODEL_NAME = "s_unet_1"
+MODEL_NAME = "adv_unet_7"
 RESULTS_FOLDER_PATH = os.path.join(cwd, "infered_images", MODEL_NAME)
 
 def predict_to_subplot(model : Model, x_target : tf.Tensor, x_source : tf.Tensor, y : tf.Tensor) -> plt.figure:
