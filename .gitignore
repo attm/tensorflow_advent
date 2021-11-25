@@ -151,3 +151,7 @@ test_results/*
 # Exclude test files (images)
 !src/tests/test_files/*
 !src/tests/test_results
+
+# Exclude readme images
+!readme_images/with_advent/*
+!readme_images/without_advent/*
