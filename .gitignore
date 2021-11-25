@@ -140,7 +140,13 @@ cython_debug/
 # Datasets files
 data/*
 saved_models/*
+infered_images/*
+test_results/*
 
 # Files formats
 *.hdf5
 *.jpg
+*.png
+
+# Exclude test files (images)
+!src/tests/test_files/*
