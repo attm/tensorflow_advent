@@ -80,8 +80,7 @@ if __name__ == '__main__':
             fig, ax = plt.subplots(nrows=1, ncols=3)
             ax[0].imshow(x_s[0, :, :, 0].T.astype(float), cmap='binary')
             ax[1].imshow(x_t[0, :, :, 0].T.astype(float), cmap='binary')
-            ax[2].imshow(y[0, :, :, 0].T.astype(float), cmap='binary')
-            print(np.unique(y[0, :, :, 0].T.astype(float)))
+            ax[2].imshow(y[0, :, :, 0].T.astype(float), cmap='jet')
             plt.show()
 
 # %%

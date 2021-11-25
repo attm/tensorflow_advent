@@ -1,6 +1,6 @@
 import os
+import time
 from tensorflow import keras
-from tensorflow.keras import models
 from tensorflow.keras.optimizers import Optimizer, Adam
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import BinaryCrossentropy
@@ -8,7 +8,6 @@ from tensorflow.keras.metrics import MeanIoU
 from tensorflow.keras.preprocessing.image import save_img
 import tensorflow as tf
 import numpy as np
-from PIL import Image
 import matplotlib.pyplot as plt
 from src.utils.generator import Parallel_array_reader_thread
 from src.model.modified_unet import build_model
@@ -20,7 +19,7 @@ DATASET_PATH = os.path.join(cwd, "data", "dataset.hdf5")
 
 # Model serialization params
 SAVED_MODELS_FOLDER_PATH = os.path.join(cwd, "saved_models")
-MODEL_NAME = "unet_4"
+MODEL_NAME = "unet_6"
 
 TRAIN_GENERATED_SAMPLES_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "train_generated")
 SAVED_MODEL_FOLDER_PATH = os.path.join(cwd, SAVED_MODELS_FOLDER_PATH, MODEL_NAME, "model")
@@ -31,8 +30,8 @@ meanIoU_train = MeanIoU(2)
 
 # Training hyperparameters
 NUM_EPOCHS = 6
-NUM_STEPS = 60000
-BATCH_SIZE = 24
+NUM_STEPS = 20000
+BATCH_SIZE = 16
 
 @tf.function
 def train_step(model : Model, optim : Optimizer, X : np.ndarray, y : np.ndarray) -> tuple:
@@ -53,6 +52,7 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
 
         loss_sum = 0
         log_step_counter = 1
+        step_time = time.time()
 
         for step in range(NUM_STEPS):
             with Parallel_array_reader_thread(DATASET_PATH, BATCH_SIZE) as train_gen:
@@ -61,6 +61,7 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
             # Prepare training data
             y_resized = tf.image.resize(y, new_y_size)
             y_resized = tf.clip_by_value(y_resized, 0.0, 1.0)
+
             x_source, _ = x
 
             # Train model
@@ -77,7 +78,7 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
             if step % (NUM_STEPS / 20) == 0:
                 # Calculate and print metrics/losses
                 meanIoU_train_value = meanIoU_train.result()
-                print(f"    {5*log_step_counter}%: loss = {loss_sum / (NUM_STEPS / 20):.4f}, meanIoU = {float(meanIoU_train_value):.4f}")
+                print(f"    {5*log_step_counter}% ({int(time.time() - step_time)}s): loss = {loss_sum / (NUM_STEPS / 20):.4f}, meanIoU = {float(meanIoU_train_value):.4f}")
                 meanIoU_train.reset_states()
 
                 # Save examples of model predictions and true samples
@@ -87,6 +88,7 @@ def fit_unet(model : Model, optim : Optimizer) -> None:
                 # Update iterators
                 loss_sum = 0
                 log_step_counter += 1
+                step_time = time.time()
 
                 # Save model
                 model.save(SAVED_MODEL_FOLDER_PATH)
@@ -103,6 +105,6 @@ if __name__ == "__main__":
         print(f"\nBuilt new model!")
 
     optim = Adam()
-    unet_model.compile(optimizer=optim)
+    unet_model.compile(optimizer=optim, loss="binary_crossentropy")
 
     fit_unet(unet_model, optim)
