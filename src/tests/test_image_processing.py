@@ -10,6 +10,9 @@ cwd = os.getcwd()
 TEST_IMAGE_PATH = os.path.join(cwd, "src/tests/test_files", "test_pred.jpg")
 RESULTS_FOLDER = os.path.join(cwd, "src/tests/test_results/image_processing")
 
+if not os.path.exists(RESULTS_FOLDER):
+    os.makedirs(RESULTS_FOLDER)
+
 def test_self_info_to_entropy_map():
     test_img = np.random.rand(1, 192, 192, 2)
     si_img = self_info_to_entropy_map(test_img)

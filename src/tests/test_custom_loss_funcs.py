@@ -8,6 +8,9 @@ from src.utils.custom_loss_funcs import pred_to_self_information, binary_ce_for_
 cwd = os.getcwd()
 RESULTS_FOLDER_PATH = os.path.join(cwd, "src/tests", "test_results")
 
+if not os.path.exists(RESULTS_FOLDER_PATH):
+    os.makedirs(RESULTS_FOLDER_PATH)
+
 def test_pred_to_self_information():
     test_image = tf.fill(dims=(1, 192, 192, 1), value=0.5)
     si = pred_to_self_information(test_image)
