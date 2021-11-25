@@ -38,8 +38,8 @@ loss_fn = SparseCategoricalCrossentropy()
 
 # Training hyperparameters
 NUM_EPOCHS = 2
-NUM_STEPS = 20
-BATCH_SIZE = 1
+NUM_STEPS = 20000
+BATCH_SIZE = 24
 
 # Discriminator parameters
 d_loss_fn = BinaryCrossentropy(from_logits=True)
